@@ -1043,6 +1043,24 @@ static int set_file_position(struct flb_tail_config *ctx,
         ret = flb_tail_db_file_set(file, ctx);
         if (ret == 0) {
             if (file->offset > 0) {
+                /*
+                 * If the database offset is larger than the current file
+                 * size, the file was likely truncated or the inode was
+                 * reused by a new (smaller) file after log rotation.
+                 * Reset the offset to 0 to avoid silently skipping the
+                 * file.
+                 */
+                if (file->offset > file->size) {
+                    flb_plg_warn(ctx->ins,
+                                 "inode=%" PRIu64
+                                 " database offset=%" PRId64
+                                 " exceeds current file size=%" PRId64
+                                 ", resetting offset to 0: %s",
+                                 file->inode, file->offset,
+                                 file->size, file->name);
+                    file->offset = 0;
+                    flb_tail_db_file_offset(file, ctx);
+                }
                 ret = lseek(file->fd, file->offset, SEEK_SET);
                 if (ret == -1) {
                     flb_errno();
